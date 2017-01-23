@@ -1,20 +1,33 @@
 package com.mail;
 
+import com.sun.mail.imap.IdleManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.mail.*;
 import javax.mail.Message.RecipientType;
+import javax.mail.event.MessageCountAdapter;
+import javax.mail.event.MessageCountEvent;
 import javax.mail.internet.InternetAddress;
 import javax.mail.search.FlagTerm;
+import java.io.IOException;
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static java.util.Arrays.asList;
 
+@org.springframework.stereotype.Service
 public class MailMonitoringService {
 
     private static Logger LOGGER = LoggerFactory.getLogger(MailMonitoringService.class);
 
+    private ExecutorService es = Executors.newCachedThreadPool();
+
+    public MailMonitoringService() {
+
+
+    }
 
     private Properties getServerProperties(String protocol, String host, String port) {
         Properties properties = new Properties();
@@ -23,13 +36,18 @@ public class MailMonitoringService {
         properties.put(String.format("mail.%s.socketFactory.class", protocol), "javax.net.ssl.SSLSocketFactory");
         properties.put(String.format("mail.%s.socketFactory.fallback", protocol), "false");
         properties.put(String.format("mail.%s.socketFactory.port", protocol), String.valueOf(port));
+        properties.put(String.format("mail.%s.usesocketchannels", protocol), "true");
+        properties.put("mail.event.scope", "session"); // or "application"
+        properties.put("mail.event.executor", es);
 
         return properties;
     }
 
-    public void getNewEmails(String protocol, String host, String port, String userName, String password) {
+    public void getNewEmails(String protocol, String host, String port, String userName, String password) throws IOException {
         Properties properties = getServerProperties(protocol, host, port);
         Session session = Session.getDefaultInstance(properties);
+
+        final IdleManager idleManager = new IdleManager(session, es);
 
         try {
             Store store = session.getStore(protocol);
@@ -37,6 +55,25 @@ public class MailMonitoringService {
 
             Folder inbox = store.getFolder("INBOX");
             inbox.open(Folder.READ_WRITE);
+
+            inbox.addMessageCountListener(new MessageCountAdapter() {
+                public void messagesAdded(MessageCountEvent ev) {
+                    Folder folder = (Folder) ev.getSource();
+                    Message[] msgs = ev.getMessages();
+                    System.out.println("Folder: " + folder + " got " + msgs.length + " new messages");
+                    try {
+                        for (Message message : msgs) {
+                            read(message);
+                        }
+                        // process new messages
+                        idleManager.watch(folder); // keep watching for new messages
+                    } catch (MessagingException e) {
+                        LOGGER.error(e.getMessage());
+                    }
+                }
+            });
+            idleManager.watch(inbox);
+
 
             Message[] unread = inbox.search(new FlagTerm(new Flags(Flags.Flag.SEEN), false));
 
@@ -92,10 +129,8 @@ public class MailMonitoringService {
         return listOfAddress;
     }
 
-    public static void main(String[] args) {
-
-        MailMonitoringService bean = new MailMonitoringService();
-        bean.getNewEmails(
+    public void read() throws IOException {
+        getNewEmails(
                 "imaps",
                 "imap.gmail.com",
                 "993",

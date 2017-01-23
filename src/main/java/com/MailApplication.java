@@ -1,5 +1,6 @@
 package com;
 
+import com.mail.MailMonitoringService;
 import com.mail.MailService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
@@ -14,12 +15,15 @@ public class MailApplication implements CommandLineRunner {
     @Autowired
     private MailService simpleMailService;
 
+    @Autowired
+    private MailMonitoringService mailMonitoringService;
+
     public static void main(String[] args) {
         SpringApplication.run(MailApplication.class, args);
     }
 
     @Override
     public void run(String... args) throws Exception {
-        simpleMailService.send();
+        mailMonitoringService.read();
     }
 }

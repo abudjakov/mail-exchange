@@ -47,13 +47,5 @@ public class MimeMailService {
 
     }
 
-    public static void main(String[] args) {
-        try {
-            new MimeMailService().send();
-        } catch (MessagingException e) {
-            e.printStackTrace();
-        }
-    }
-
 }
 
